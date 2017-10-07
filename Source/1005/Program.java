@@ -10,19 +10,6 @@ import java.io.*;
 
 public class Program 
 {
-    class FibResult
-    {
-        public int n;
-        public int answer;
-        
-        public FibResult(int n, int answer)
-        {
-            this.n = n;
-            this.answer = answer;
-        }
-    }
-    
-    //public static FibResult[] results;
     public static long[] results;
     
     public static void main(String[] args) throws IOException
