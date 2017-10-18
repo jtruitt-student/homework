@@ -8,12 +8,11 @@ public class Person
     
     private char[] name = new char[MAX_NAME_SIZE];
     private int id;
-    // Keep one reference so a new string isn't created every time getName is 
-    // called.
-    private String nameAsString = "";
     
     public Person()
     {
+        for (int i = 0; i < name.length; i++)
+            name[i] = ' ';
         id = -1;
     }
     
@@ -23,11 +22,21 @@ public class Person
         // of string, start adding padding for every character after that.
         for (int i = 0; i < MAX_NAME_SIZE; i++)
             this.name[i] = (i < name.length()) ? name.charAt(i) : ' ';
-        
-        nameAsString = new String(name);
             
         id = currentId;
         currentId++;
+    }
+    
+    // To be used within this package as a means to create a person from
+    // a record as it exists in the hash table.
+    Person(String name, int id)
+    {
+        // Accept only the first 10 letters of any name. If go outside range
+        // of string, start adding padding for every character after that.
+        for (int i = 0; i < MAX_NAME_SIZE; i++)
+            this.name[i] = (i < name.length()) ? name.charAt(i) : ' ';
+        
+        this.id = id;
     }
     
     public static int getCurrentId()
@@ -42,11 +51,27 @@ public class Person
     
     public String getName()
     {
-        return nameAsString;
+        return new String(name);
     }
     
     public int getId()
     {   
         return id;
+    }
+    
+    @Override
+    public int hashCode()
+    {
+        int sum = 0;
+        for (char c : name)
+            sum += c;
+        
+        return sum % RecordManager.getTableSize();
+    }
+    
+    @Override
+    public String toString()
+    {
+        return (new String(name)) + "\nID: " + id + "\nHash Code: " + hashCode();
     }
 }

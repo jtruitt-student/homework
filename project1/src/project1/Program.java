@@ -13,8 +13,18 @@ public class Program
         RecordManager.init();
     }
     
-    public static void main(String[] args) 
+    public static void main(String[] args)
     {
+        init();
         
+        Person josh = new Person("Josh");
+        Person roland = new Person("Roland");
+        Person cyril = new Person("Cyril");
+        
+        RecordManager.test();
+        
+        //RecordManager.input("Cyril");
+        
+        RecordManager.test();
     }
 }
