@@ -1,13 +1,14 @@
 package project1;
 
 import java.io.*;
+import java.nio.file.*;
 
 public class RecordManager 
 {
     public static class Record
     {
-        // Every Record is 26 bytes long.
-        public static final int SIZE = 26;
+        // Every Record is 25 bytes long.
+        public static final int SIZE = 25;
         
         private Person person;
         private byte meta;
@@ -46,9 +47,22 @@ public class RecordManager
             }
         }
         
+        public boolean isValid()
+        {
+            return meta == DATA_VALID;
+        }
+        
         public boolean hasTombstone()
         {
             return meta == DATA_TOMBSTONE;
+        }
+        
+        // Marks the record as deleted and overwrites the name with a tombstone.
+        public void delete()
+        {
+            meta = DATA_TOMBSTONE;
+            person.setName("#");
+            person.setId(-1);
         }
         
         // Returns true if the meta data indicates that the record contains
@@ -64,6 +78,14 @@ public class RecordManager
             return "RECORD FOR: " + person.getName() + " (" + person.getId()
                    + ")\n" + "Meta-data: " + meta;
         }
+        
+        @Override
+        public boolean equals(Object other)
+        {
+            // For our purposes, two Records are equal if the names of their 
+            // people match.
+            return person.getName().equals(((Record)other).person.getName());
+        }
     }
     
     public static final String TABLE_PATH = "table.dat";
@@ -75,7 +97,7 @@ public class RecordManager
                              DATA_DIRTY = 0b0101;
     
     private static RandomAccessFile table;
-    private static int tableSize = 16;
+    private static int maxTableSize = 16, numRecords = 0;
     
     public static void init()
     {
@@ -89,28 +111,17 @@ public class RecordManager
                 table = new RandomAccessFile(TABLE_PATH, "r");
                 
                 // Read in all values that need to be initialized.
-                tableSize = table.readInt();
+                maxTableSize = table.readInt();
+                numRecords = table.readInt();
                 Person.setCurrentId(table.readInt());
                 
                 table.close();
             }
             else // Make the initial hash table.
-            {
-                temp.createNewFile();
-                
-                // Format is: 4 bytes for tableSize, 4 bytes for currentId,
-                // then (tableSize * Record.SIZE) bytes for records.
+            { 
                 table = new RandomAccessFile(TABLE_PATH, "rw");
-                table.writeInt(tableSize);
-                table.writeInt(Person.getCurrentId());
-                
-                // Initialize the table with records that can be overwritten.
-                Record initRecord = new Record();
-                for (int i = 0; i < tableSize; i++)
-                    initRecord.write(table);
-                
-                System.out.println("File size after init: " + table.length());
-                
+                makeInitialTable(table);
+
                 table.close();
             }
         }
@@ -121,56 +132,252 @@ public class RecordManager
         }
     }
     
-    // Takes a name of a new Persn and creates a Person with that name,
+    // Takes a name of a new Person and creates a Person with that name,
     // generates a record, hashes it, and puts it into the hash table.
     // Returns whether it succeeded.
-    public static boolean input(String name)
+    public static void input(String name)
     { 
         try
         {
-            // Get the output ready.
-            table = new RandomAccessFile(TABLE_PATH, "rw");
-            System.out.println("Length of file: " + table.length());
+            RandomAccessFile table = new RandomAccessFile(TABLE_PATH, "rw");
             
-            // Prepare the person, record, and hash.
             Person p = new Person(name);
-            Record recordToInput = new Record(p);
-            int location = p.hashCode();
+            Record r = new Record(p);
             
-            if (getRecord(table, location).canBeOverwritten())
+            input(table, r);
+            
+            table.close();
+        }
+        catch(IOException e)
+        {
+            System.out.println("There was a problem when trying to input"
+                            + " a new record: " + e.getMessage());
+        }
+    }
+    
+    // The backbone of input funcionality, meant to be used only by
+    // the RecordManager. Allows specification of table file and copying
+    // of a record from one location to another.
+    private static void input(RandomAccessFile table, Record recordToInput)
+            throws IOException
+    {
+        // Prepare the hash.
+        int location = recordToInput.person.hashCode();
+
+        // If the record can't be overwritten, employ linear probe.
+        if (!overwriteRecord(table, recordToInput, location))
+        {
+            int failSafeCounter = 0; // Counts to prevent endless loop.
+            do // Loop until the record can be overwritten.
             {
-                // All's good, data can immediately be written to the table.
-                table.seek(getRecordPosition(location)); // Move to record pos.
-                recordToInput.write(table); // Write to table.
+                // Increment to next location to see if it's suitable.
+                location = (location + 1) % maxTableSize;
+
+                failSafeCounter++;
+                // With rehashing, this is technically redundant and 
+                // shouldn't be encountered, but it's
+                // a good fail-safe against an infinite loop.
+                if (failSafeCounter >= maxTableSize)
+                    throw new IOException("There was no suitable space "
+                            + "available in the hash table.");
+
+            } while(!overwriteRecord(table, recordToInput, location));
+        }
+
+        // Check the load factor after an insert.
+        if (numRecords >= (maxTableSize / 2))
+        {
+            // Rehash
+            System.out.print("Table is overcapacity (" + numRecords + "/" 
+                    + maxTableSize + "). Rehashing...");
+
+            maxTableSize *= 2; // Double table size.
+            
+            // Create a temp file where we'll build the new table so we don't
+            // lose data if the transfer process is interrupted.
+            RandomAccessFile temp = new RandomAccessFile("temp.dat", "rw");
+            
+            // Prepare temp table.
+            makeInitialTable(temp);
+
+            // Go through all records in the original table and copy over
+            // any holding valid data.
+            Record r;
+            for (int i = 0; i < (maxTableSize / 2); i++)
+            {
+                r = getRecord(table, i);
+                if (r.isValid())
+                {
+                    numRecords--; // Stop record count from changing.
+                    input(temp, r); // Input into new table (also increments
+                                    // numRecords.
+                }
             }
-            else
+            
+            // Close both files so that they can be moved/removed.
+            temp.close();
+            table.close();
+            
+            // Set up refs of type File to both Files.
+            File tempFile = new File("temp.dat");
+            File tableFile = new File(TABLE_PATH);
+            
+            // Copy the temp file to the main table's file location, overwriting
+            // it.
+            Files.copy(tempFile.toPath(), tableFile.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING);
+            
+            // Clean up.
+            tempFile.delete();
+
+            System.out.println("Done");
+        }
+    }
+    
+    public static void delete(String name)
+    {
+        try
+        {
+            RandomAccessFile table = new RandomAccessFile(TABLE_PATH, "rw");
+            
+            Person p = new Person(name);
+            // Every time a person is instantiated, the current id is
+            // incremented to make adding records easier. Have to create a 
+            // new Person here for the delete method, but don't want the
+            // currentId to increment. Undo incrementation here.
+            Person.setCurrentId(Person.getCurrentId() - 1);
+            Record r = new Record(p);
+            
+            delete(table, r);
+            
+            table.close();
+        }
+        catch(IOException e)
+        {
+            System.out.println("There was a problem when trying to delete"
+                            + " a record: " + e.getMessage());
+        }
+    }
+    
+    private static void delete(RandomAccessFile table, Record recordToDelete)
+            throws IOException
+    {
+        int location = recordToDelete.person.hashCode();
+        
+        // If the record can't be overwritten, employ linear probe.
+        if (!removeRecord(table, recordToDelete, location))
+        {
+            int failSafeCounter = 0; // Counts to prevent endless loop.
+            do // Loop until the record can be overwritten.
             {
-                // Have to find appropriate place for new record.
+                // Increment to next location to see if it's suitable.
+                location = (location + 1) % maxTableSize;
+
+                failSafeCounter++;
+                // With rehashing, this is technically redundant and 
+                // shouldn't be encountered, but it's
+                // a good fail-safe against an infinite loop.
+                if (failSafeCounter >= maxTableSize)
+                    throw new IOException("There was no suitable record found "
+                            + "that could be deleted.");
+
+            } while(!removeRecord(table, recordToDelete, location));
+        }
+    }
+    
+    // Prints the hash table to standard output.
+    public static void printTable()
+    {
+        try
+        {
+            table = new RandomAccessFile(TABLE_PATH, "r");
+            
+            Record r; // Holds ref to input record in loop.
+            for (int i = 0; i < maxTableSize; i++)
+            {
+                r = getRecord(table, i);
+                
+                if (r != null)
+                    System.out.println(i + ": " + r.person.getName() + " ("
+                        + r.person.getId() + ")");
+                else
+                    throw new IOException("Record retrieval failed. Table may"
+                            + " be corrupt.");
             }
             
             table.close();
         }
         catch (IOException e)
         {
-            System.out.println("There was a problem when trying to input"
-                            + " a new record: " + e.getMessage());
+            System.out.println("There was a problem reading the hash table"
+                    + " when attempting to print it out: " + e.getMessage());
         }
-        
-        
-        
-        return false;
     }
     
     // Helper method that takes a Record's index and converts that into
     // an offset that can be used with a file.
     private static int getRecordPosition(int index)
     {
-        return (index * Record.SIZE) + 8;
+        // + 12 because there are three ints saved in the header of the file,
+        // each encoded in 4 bytes.
+        return (index * Record.SIZE) + 12;
+    }
+    
+    // Overwrites the record at the given index. If it can't be overwritten,
+    // the method returns false. Otherwise, returns true.
+    private static boolean overwriteRecord(RandomAccessFile f, 
+            Record recordToInput, int index) throws IOException
+    {
+        if (getRecord(f, index).canBeOverwritten())
+        {
+            // All's good, data can immediately be written to the table.
+            f.seek(getRecordPosition(index)); // Move to record pos.
+            recordToInput.write(f); // Write to table.
+
+            // Update the header data.
+            numRecords++;
+            f.seek(0);
+            f.writeInt(maxTableSize);
+            f.writeInt(numRecords);
+            f.writeInt(Person.getCurrentId());
+            
+            return true;
+        }
+        else
+            return false;
+    }
+    
+    // Removes a record from the specified table by checking to see if the 
+    // record given matches the one at the provided index. If it does, the
+    // record is maarked as deleted and the method returns true. If not,
+    //r eturns false.
+    private static boolean removeRecord(RandomAccessFile f,
+            Record recordToDelete, int index) throws IOException
+    {
+        Record r = getRecord(f, index);
+        if (r.equals(recordToDelete))
+        {
+            recordToDelete.delete(); // Mark deleted.
+            // Seek back to the start of record and overwrite with new data.
+            f.seek(getRecordPosition(index));
+            recordToDelete.write(f);
+            
+            // Update header data.
+            numRecords--;
+            f.seek(0);
+            f.writeInt(maxTableSize);
+            f.writeInt(numRecords);
+            f.writeInt(Person.getCurrentId());
+            
+            return true;
+        }
+        else
+            return false;
     }
     
     // Returns the Record at index in the hash table file.
     private static Record getRecord(RandomAccessFile f, int index)
-    {
+    {   
         try
         {
             f.seek(getRecordPosition(index));
@@ -197,9 +404,29 @@ public class RecordManager
         }
     }
     
-    public static int getTableSize()
+    private static void makeInitialTable(RandomAccessFile f)
+            throws IOException
     {
-        return tableSize;
+        // Format is: 4 bytes for fSize, 4 bytes for currentId,
+        // then (fSize * Record.SIZE) bytes for records.
+        f.writeInt(maxTableSize);
+        f.writeInt(numRecords);
+        f.writeInt(Person.getCurrentId());
+
+        // Initialize the f with records that can be overwritten.
+        Record initRecord = new Record();
+        for (int i = 0; i < maxTableSize; i++)
+            initRecord.write(f);
+    }
+    
+    public static int getNumRecords()
+    {
+        return numRecords;
+    }
+    
+    public static int getMaxTableSize()
+    {
+        return maxTableSize;
     }
     
     public static void test()

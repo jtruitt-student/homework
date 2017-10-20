@@ -16,15 +16,35 @@ public class Program
     public static void main(String[] args)
     {
         init();
+
+        System.out.println("Num records: " + RecordManager.getNumRecords());
+        System.out.println("Max Table Size: " + RecordManager.getMaxTableSize());
+        System.out.println("ID: " + Person.getCurrentId());
         
-        Person josh = new Person("Josh");
-        Person roland = new Person("Roland");
-        Person cyril = new Person("Cyril");
+//        RecordManager.input("Josh");
+//        RecordManager.input("Lilly");
+//        RecordManager.input("Cyril");
+//        RecordManager.delete("Cyril");
+//        
+//        RecordManager.printTable();
+//        
+//        RecordManager.input("Cyril");
+//        
+//        RecordManager.printTable();
         
-        RecordManager.test();
+        RecordManager.input("Cyril");
+        RecordManager.input("Josh");
+        RecordManager.input("Lilly");
+        
+        for (int i = 0; i < 6; i++)
+            RecordManager.input("Test Person");
+        
+        RecordManager.printTable();
+        
+        //RecordManager.test();
         
         //RecordManager.input("Cyril");
         
-        RecordManager.test();
+        //RecordManager.test();
     }
 }

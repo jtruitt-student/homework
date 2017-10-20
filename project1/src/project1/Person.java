@@ -4,6 +4,7 @@ public class Person
 {
     public static final int MAX_NAME_SIZE = 10;
     
+    // The next ID that will be applied to a created person.
     private static int currentId = 0;
     
     private char[] name = new char[MAX_NAME_SIZE];
@@ -18,10 +19,7 @@ public class Person
     
     public Person(String name)
     {
-        // Accept only the first 10 letters of any name. If go outside range
-        // of string, start adding padding for every character after that.
-        for (int i = 0; i < MAX_NAME_SIZE; i++)
-            this.name[i] = (i < name.length()) ? name.charAt(i) : ' ';
+        setName(name);
             
         id = currentId;
         currentId++;
@@ -31,11 +29,7 @@ public class Person
     // a record as it exists in the hash table.
     Person(String name, int id)
     {
-        // Accept only the first 10 letters of any name. If go outside range
-        // of string, start adding padding for every character after that.
-        for (int i = 0; i < MAX_NAME_SIZE; i++)
-            this.name[i] = (i < name.length()) ? name.charAt(i) : ' ';
-        
+        setName(name);
         this.id = id;
     }
     
@@ -54,19 +48,37 @@ public class Person
         return new String(name);
     }
     
+    void setName(String name)
+    {
+        // Accept only the first 10 letters of any name. If go outside range
+        // of string, start adding padding for every character after that.
+        for (int i = 0; i < MAX_NAME_SIZE; i++)
+            this.name[i] = (i < name.length()) ? name.charAt(i) : ' ';
+    }
+    
     public int getId()
     {   
         return id;
     }
     
+    public void setId(int id)
+    {
+        this.id = id;
+    }
+    
     @Override
     public int hashCode()
     {
-        int sum = 0;
-        for (char c : name)
-            sum += c;
-        
-        return sum % RecordManager.getTableSize();
+//        int sum = 0;
+//        for (char c : name)
+//            sum += c;
+//        
+//        return sum % RecordManager.getMaxTableSize();
+        // Get hash code based on name using java's hashCode method, 
+        // as the project instructions specify.
+        // Also, java produces negative numbers with default hashCode, so take
+        // abs val.
+        return Math.abs(getName().hashCode() % RecordManager.getMaxTableSize());
     }
     
     @Override
