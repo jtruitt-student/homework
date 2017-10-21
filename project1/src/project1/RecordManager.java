@@ -181,7 +181,7 @@ public class RecordManager
     { 
         try
         {
-            RandomAccessFile table = new RandomAccessFile(TABLE_PATH, "rw");
+            table = new RandomAccessFile(TABLE_PATH, "rw");
             
             Person p = new Person(name);
             Record r = new Record(p);
@@ -287,7 +287,7 @@ public class RecordManager
     {
         try
         {
-            RandomAccessFile table = new RandomAccessFile(TABLE_PATH, "rw");
+            table = new RandomAccessFile(TABLE_PATH, "rw");
             
             Person p = new Person(name, true); // Use const that doesn't alter
                                                // currentId. Name is all that
