@@ -10,7 +10,7 @@ import java.io.*;
 public class Program 
 {
     // Initializes the program and calls any other inits that are necessary.
-    public static void init()
+    static void init()
     {
         RecordManager.init();
     }
@@ -21,8 +21,10 @@ public class Program
         
         try
         {
+            // Set up file reader.
             BufferedReader bf = new BufferedReader(new FileReader("input.dat"));
         
+            // Read in and perform all table operations from text file.
             RecordManager.readCommandFile(bf);
         }
         catch (IOException e)

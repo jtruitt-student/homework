@@ -3,11 +3,17 @@ package project1;
 import java.io.*;
 import java.nio.file.*;
 
+// Handles Record manipulation and all operations on the hash table. All
+// methods are static, no object of RecordManager should be created.
 public class RecordManager 
 {
-    public static class Record
+    // Represents a Record, complete with all its data.
+    private static class Record
     {
-        // Every Record is 25 bytes long.
+        // The size of a Record in bytes. Every byte is 25 bytes long because
+        // person.name == 20, person.id == 4, meta == 1. Because of how the name
+        // is read, a byte containing a terminating char for a string isn't
+        // necessary.
         public static final int SIZE = 25;
         
         private Person person;
@@ -31,7 +37,8 @@ public class RecordManager
             this.meta = meta;
         }
         
-        // Writes the record to the random access file.
+        // Writes the record to the random access file, starting at the current
+        // file pointer.
         public void write(RandomAccessFile f)
         {
             try
@@ -47,21 +54,25 @@ public class RecordManager
             }
         }
         
+        // Returns whether meta == DATA_VALID.
         public boolean isValid()
         {
             return meta == DATA_VALID;
         }
         
+        // Returns whether meta == DATA_EMPTY.
         public boolean isEmpty()
         {
             return meta == DATA_EMPTY;
         }
         
+        // Returns whether meta == DATA_TOMBSTONE.
         public boolean hasTombstone()
         {
             return meta == DATA_TOMBSTONE;
         }
         
+        // Gives the meta data as a bit string (i.e. 0b0000).
         public String metaAsBitString()
         {
             switch(meta)
@@ -97,10 +108,12 @@ public class RecordManager
         @Override
         public String toString()
         {
-            return "RECORD FOR: " + person.getName() + " (" + person.getId()
-                   + ")\n" + "Meta-data: " + meta;
+            return person.getName() + " " 
+                    + ((person.getId() == -1) ? " " : person.getId())
+                    + " " + metaAsBitString();
         }
         
+        // Compares two Records, returning whether their names are equal.
         @Override
         public boolean equals(Object other)
         {
@@ -110,6 +123,7 @@ public class RecordManager
         }
     }
     
+    // The unchanging path to the file containing the hash table.
     public static final String TABLE_PATH = "table.dat";
      
     // Meta-data codes.
@@ -118,9 +132,12 @@ public class RecordManager
                              DATA_VALID = 0b0100,
                              DATA_DIRTY = 0b0101;
     
-    private static RandomAccessFile table;
+    private static RandomAccessFile table; // Used frequently, ready ref.
     private static int maxTableSize = 16, numRecords = 0;
     
+    // Initializes the hash table if it doesn't exist. If it does exist,
+    // the header of the table is read to give the program information it needs
+    // to run correctly by setting variables to their appropriate values.
     public static void init()
     {
         try
@@ -154,8 +171,9 @@ public class RecordManager
         }
     }
     
-    // Takes a name of a new Person and creates a Person with that name,
-    // generates a record, hashes it, and puts it into the hash table.
+    // Serves as an easy way for a user to input a record. Takes the name of the
+    // person and whether you'd like to suppress the information the method
+    // can give (i.e. "Input {name} - {id}").
     public static void input(String name, boolean suppressInform)
     { 
         try
@@ -176,12 +194,11 @@ public class RecordManager
         }
     }
     
-    // The backbone of input funcionality, meant to be used only by
-    // the RecordManager. Allows specification of table file and copying
-    // of a record from one location to another.
+    // Helper method to the input method above. Accepts information for the
+    // table being used, a reference to the record being deleted, and whether
+    // information giving should be suppressed.
     private static void input(RandomAccessFile table, Record recordToInput,
-            boolean suppressInform)
-            throws IOException
+            boolean suppressInform) throws IOException
     {
         // Inform user
         if (!suppressInform)
@@ -238,7 +255,7 @@ public class RecordManager
                 {
                     numRecords--; // Stop record count from changing.
                     input(temp, r, true); // Input into new table (also increments
-                                    // numRecords.
+                                          // numRecords.)
                 }
             }
             
@@ -260,18 +277,18 @@ public class RecordManager
         }
     }
     
+    // Serves as an easy way for a user to delete a record. Takes 
+    // the name of the person and whether you'd like to suppress the information 
+    // the method can give (i.e. "Delete {name} - {id}").
     public static void delete(String name, boolean suppressInform)
     {
         try
         {
             RandomAccessFile table = new RandomAccessFile(TABLE_PATH, "rw");
             
-            Person p = new Person(name);
-            // Every time a person is instantiated, the current id is
-            // incremented to make adding records easier. Have to create a 
-            // new Person here for the delete method, but don't want the
-            // currentId to increment. Undo incrementation here.
-            Person.setCurrentId(Person.getCurrentId() - 1);
+            Person p = new Person(name, true); // Use const that doesn't alter
+                                               // currentId. Name is all that
+                                               // matters here.
             Record r = new Record(p);
             
             delete(table, r, suppressInform);
@@ -285,9 +302,11 @@ public class RecordManager
         }
     }
     
+    // Helper method to the delete method above. Accepts information for the
+    // table being used, a reference to the record being deleted, and whether
+    // information giving should be suppressed.
     private static void delete(RandomAccessFile table, Record recordToDelete,
-            boolean suppressInform)
-            throws IOException
+            boolean suppressInform) throws IOException
     {
         // Inform user
         if (!suppressInform)
@@ -323,7 +342,8 @@ public class RecordManager
         }
     }
     
-    // Prints the hash table to standard output.
+    // Prints the hash table and some information about it to standard
+    // output.
     public static void printTable()
     {
         try
@@ -340,9 +360,7 @@ public class RecordManager
                 r = getRecord(table, i);
                 
                 if (r != null)
-                    System.out.println(i + ": " + r.person.getName() + " "
-                        + ((r.person.getId() == -1) ? " " : r.person.getId())
-                        + " " + r.metaAsBitString());
+                    System.out.println(i + ": " + r);
                 else
                     throw new IOException("Record retrieval failed. Table may"
                             + " be corrupt.");
@@ -367,8 +385,9 @@ public class RecordManager
         return (index * Record.SIZE) + 12;
     }
     
-    // Overwrites the record at the given index. If it can't be overwritten,
-    // the method returns false. Otherwise, returns true.
+    // Helper method that overwrites the record at the given index. 
+    // If it can't be overwritten, returns false. Otherwise, returns true.
+    // Used in conjunction with input method. Also updates header info.
     private static boolean overwriteRecord(RandomAccessFile f, 
             Record recordToInput, int index) throws IOException
     {
@@ -391,10 +410,10 @@ public class RecordManager
             return false;
     }
     
-    // Removes a record from the specified table by checking to see if the 
-    // record given matches the one at the provided index. If it does, the
-    // record is marked as deleted and the method returns true. If not,
-    // returns false.
+    // Helper method that removes a record from the specified table by checking 
+    // to see if the  record given matches the one at the provided index. If it
+    // does, the record is marked as deleted and the method returns true. If not,
+    // returns false. Also updates header info.
     private static boolean removeRecord(RandomAccessFile f,
             Record recordToDelete, int index) throws IOException
     {
@@ -423,7 +442,8 @@ public class RecordManager
             return false;
     }
     
-    // Returns the Record at index in the hash table file.
+    // Returns the Record at index in the provided hash table file, or null
+    // if there was an issue obtaining the Record.
     private static Record getRecord(RandomAccessFile f, int index)
     {   
         try
@@ -452,8 +472,8 @@ public class RecordManager
         }
     }
     
-    private static void makeInitialTable(RandomAccessFile f)
-            throws IOException
+    // Makes a table with maxTableSize empty records in the specified file.
+    private static void makeInitialTable(RandomAccessFile f) throws IOException
     {
         // Format is: 4 bytes for fSize, 4 bytes for currentId,
         // then (fSize * Record.SIZE) bytes for records.
