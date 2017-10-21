@@ -52,9 +52,31 @@ public class RecordManager
             return meta == DATA_VALID;
         }
         
+        public boolean isEmpty()
+        {
+            return meta == DATA_EMPTY;
+        }
+        
         public boolean hasTombstone()
         {
             return meta == DATA_TOMBSTONE;
+        }
+        
+        public String metaAsBitString()
+        {
+            switch(meta)
+            {
+                case DATA_EMPTY:
+                    return "0b0000";
+                case DATA_TOMBSTONE:
+                    return "0b0001";
+                case DATA_VALID:
+                    return "0b0100";
+                case DATA_DIRTY:
+                    return "0b0101";
+                default:
+                    return "INVALID META DATA";
+            }
         }
         
         // Marks the record as deleted and overwrites the name with a tombstone.
@@ -134,8 +156,7 @@ public class RecordManager
     
     // Takes a name of a new Person and creates a Person with that name,
     // generates a record, hashes it, and puts it into the hash table.
-    // Returns whether it succeeded.
-    public static void input(String name)
+    public static void input(String name, boolean suppressInform)
     { 
         try
         {
@@ -144,7 +165,7 @@ public class RecordManager
             Person p = new Person(name);
             Record r = new Record(p);
             
-            input(table, r);
+            input(table, r, suppressInform);
             
             table.close();
         }
@@ -158,9 +179,16 @@ public class RecordManager
     // The backbone of input funcionality, meant to be used only by
     // the RecordManager. Allows specification of table file and copying
     // of a record from one location to another.
-    private static void input(RandomAccessFile table, Record recordToInput)
+    private static void input(RandomAccessFile table, Record recordToInput,
+            boolean suppressInform)
             throws IOException
     {
+        // Inform user
+        if (!suppressInform)
+            System.out.println("Input \"" + recordToInput.person.getName() 
+                    + "\" - " + recordToInput.person.getId());
+                 
+        
         // Prepare the hash.
         int location = recordToInput.person.hashCode();
 
@@ -188,8 +216,8 @@ public class RecordManager
         if (numRecords >= (maxTableSize / 2))
         {
             // Rehash
-            System.out.print("Table is overcapacity (" + numRecords + "/" 
-                    + maxTableSize + "). Rehashing...");
+            System.out.println("Table is overcapacity (" + numRecords + "/" 
+                    + maxTableSize + "). Rehashing.");
 
             maxTableSize *= 2; // Double table size.
             
@@ -209,7 +237,7 @@ public class RecordManager
                 if (r.isValid())
                 {
                     numRecords--; // Stop record count from changing.
-                    input(temp, r); // Input into new table (also increments
+                    input(temp, r, true); // Input into new table (also increments
                                     // numRecords.
                 }
             }
@@ -229,12 +257,10 @@ public class RecordManager
             
             // Clean up.
             tempFile.delete();
-
-            System.out.println("Done");
         }
     }
     
-    public static void delete(String name)
+    public static void delete(String name, boolean suppressInform)
     {
         try
         {
@@ -248,7 +274,7 @@ public class RecordManager
             Person.setCurrentId(Person.getCurrentId() - 1);
             Record r = new Record(p);
             
-            delete(table, r);
+            delete(table, r, suppressInform);
             
             table.close();
         }
@@ -259,29 +285,41 @@ public class RecordManager
         }
     }
     
-    private static void delete(RandomAccessFile table, Record recordToDelete)
+    private static void delete(RandomAccessFile table, Record recordToDelete,
+            boolean suppressInform)
             throws IOException
     {
+        // Inform user
+        if (!suppressInform)
+            System.out.println("Delete \"" + recordToDelete.person.getName() 
+                    + "\"");
+        
         int location = recordToDelete.person.hashCode();
         
-        // If the record can't be overwritten, employ linear probe.
+        // Try to remove record at hashed location.
         if (!removeRecord(table, recordToDelete, location))
         {
-            int failSafeCounter = 0; // Counts to prevent endless loop.
-            do // Loop until the record can be overwritten.
+            // Employ linear probe if the record doesn't match
+            Record r;
+            while(true)
             {
                 // Increment to next location to see if it's suitable.
                 location = (location + 1) % maxTableSize;
-
-                failSafeCounter++;
-                // With rehashing, this is technically redundant and 
-                // shouldn't be encountered, but it's
-                // a good fail-safe against an infinite loop.
-                if (failSafeCounter >= maxTableSize)
-                    throw new IOException("There was no suitable record found "
-                            + "that could be deleted.");
-
-            } while(!removeRecord(table, recordToDelete, location));
+                r = getRecord(table, location);
+                
+                if (!r.isEmpty()) // Record's not empty...
+                {
+                    // ... try to remove.
+                    if (removeRecord(table, recordToDelete, location))
+                        break; // Leave loop if record matches and is removed.
+                }
+                else // Reached empty record...
+                {
+                    // ... probe ends, no such record exists, inform user.
+                    throw new IOException("No record for \"" 
+                        + recordToDelete.person.getName() + "\" exists.");
+                }
+            }
         }
     }
     
@@ -292,18 +330,24 @@ public class RecordManager
         {
             table = new RandomAccessFile(TABLE_PATH, "r");
             
+            System.out.println("\nTABLE (Bytes: " + table.length()
+                    + " | Records: " + ((table.length() - 12) / Record.SIZE)
+                    + " total, " + numRecords + " valid.)");
+            
             Record r; // Holds ref to input record in loop.
             for (int i = 0; i < maxTableSize; i++)
             {
                 r = getRecord(table, i);
                 
                 if (r != null)
-                    System.out.println(i + ": " + r.person.getName() + " ("
-                        + r.person.getId() + ")");
+                    System.out.println(i + ": " + r.person.getName() + " "
+                        + ((r.person.getId() == -1) ? " " : r.person.getId())
+                        + " " + r.metaAsBitString());
                 else
                     throw new IOException("Record retrieval failed. Table may"
                             + " be corrupt.");
             }
+            System.out.println(); // Good spacing.
             
             table.close();
         }
@@ -349,8 +393,8 @@ public class RecordManager
     
     // Removes a record from the specified table by checking to see if the 
     // record given matches the one at the provided index. If it does, the
-    // record is maarked as deleted and the method returns true. If not,
-    //r eturns false.
+    // record is marked as deleted and the method returns true. If not,
+    // returns false.
     private static boolean removeRecord(RandomAccessFile f,
             Record recordToDelete, int index) throws IOException
     {
@@ -368,6 +412,10 @@ public class RecordManager
             f.writeInt(maxTableSize);
             f.writeInt(numRecords);
             f.writeInt(Person.getCurrentId());
+            
+            // Inform user of successful deletion.
+            System.out.println("Deleted \"" + r.person.getName() + "\" - "
+                        + r.person.getId());
             
             return true;
         }
@@ -429,16 +477,48 @@ public class RecordManager
         return maxTableSize;
     }
     
-    public static void test()
+    // Reads a text file with commands relevant to hashing operations and
+    // performs them on the table.
+    public static void readCommandFile(BufferedReader f)
     {
         try
         {
-            table = new RandomAccessFile(TABLE_PATH, "r");
-            System.out.println(getRecord(table, 3));
+            String line;
+            while ((line = f.readLine()) != null)
+            {
+                String cmd = line.substring(0, line.indexOf('(')).toLowerCase();
+                String arg;
+                
+                // Determine action to take based on cmd.
+                switch (cmd)
+                {
+                    case "input":
+                        arg = line.substring(line.indexOf('"') + 1,
+                                line.lastIndexOf('"'));
+                        
+                        input(arg, false);
+                        break;
+                    case "delete":
+                        arg = line.substring(line.indexOf('"') + 1,
+                                line.lastIndexOf('"'));
+                        
+                        delete(arg, false);
+                        break;
+                    case "printtable":
+                        printTable();
+                        break;
+                }
+            }
         }
-        catch (Exception e)
+        catch(IOException e)
         {
-            System.exit(0);
+            System.out.println("There was a problem when trying to read the "
+                    + "command file: " + e.getMessage());
+        }
+        catch(NullPointerException e)
+        {
+            System.out.println("An unexpected null reference occurred when "
+                    + "trying to read the command file.");
         }
     }
 }
