@@ -132,6 +132,9 @@ public class RecordManager
                              DATA_VALID = 0b0100,
                              DATA_DIRTY = 0b0101;
     
+    // The byte size of the table's header.
+    public static final int HEADER_SIZE = 12;
+    
     private static RandomAccessFile table; // Used frequently, ready ref.
     private static int maxTableSize = 16, numRecords = 0;
     
@@ -351,7 +354,7 @@ public class RecordManager
             table = new RandomAccessFile(TABLE_PATH, "r");
             
             System.out.println("\nTABLE (Bytes: " + table.length()
-                    + " | Records: " + ((table.length() - 12) / Record.SIZE)
+                    + " | Records: " + ((table.length() - HEADER_SIZE) / Record.SIZE)
                     + " total, " + numRecords + " valid.)");
             
             Record r; // Holds ref to input record in loop.
@@ -380,9 +383,7 @@ public class RecordManager
     // an offset that can be used with a file.
     private static int getRecordPosition(int index)
     {
-        // + 12 because there are three ints saved in the header of the file,
-        // each encoded in 4 bytes.
-        return (index * Record.SIZE) + 12;
+        return (index * Record.SIZE) + HEADER_SIZE;
     }
     
     // Helper method that overwrites the record at the given index. 
