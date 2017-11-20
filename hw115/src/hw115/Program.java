@@ -1,13 +1,12 @@
 /*
  * Joshua Truitt COSC 311
- * HW115
+ * HW1115
  * Gets a number of dice, a threshold, and outputs the combinations of dice
  * that sum to give numbers of that threshold or higher.
  */
 package hw115;
 
 import java.util.*;
-import java.math.*;
 
 public class Program
 {
