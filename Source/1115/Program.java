@@ -3,6 +3,8 @@
  * HW1115
  * Gets a number of dice, a threshold, and outputs the combinations of dice
  * that sum to give numbers of that threshold or higher.
+ * https://github.com/jtruitt-student/homework/tree/master/Source/1115/
+Program.java
  */
 package hw115;
 
